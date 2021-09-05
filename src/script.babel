@@ -1,0 +1,266 @@
+function TheRules() {
+  return (
+    <div className="rules">
+      <h2>Règles du jeu</h2>
+      <ul>
+        <li>Vous jouez les bleus.</li>
+        <li>Un pion ne peut avancer que sur la même rangée, en direction du pion adverse.</li>
+        <li>Celui qui ne peut plus jouer à perdu.</li>
+      </ul>
+      <h3>Notes</h3>
+      <ul>
+        <li>Vous commencez toujours.</li>
+        <li>Chaque partie est gagnable par le joueur.</li>
+      </ul>
+    </div>
+  )
+}
+
+function GridSizeChoices(props) {
+  return (
+    <form>
+      <label htmlFor="gridsize">Taille de la grille :</label>
+      <select onChange={() => props.changeSize(event)} name="grid-size">
+        <option value="2">Bac à sable</option>
+        <option value="4">Petite</option>
+        <option value="8">Moyenne</option>
+        <option value="16">Grande</option>
+      </select>
+      <br/>
+      <label>Difficulté de l'IA :</label>
+      <select onChange={() => props.changeAILevel(event)} defaultValue={1}>
+        <option value="0">Facile</option>
+        <option value="1">Difficile</option>
+      </select>
+    </form>
+  )
+}
+
+function Info(props) {
+  const players = {1: 'bleus', 2: 'rouges'};
+  let player = players[props.currentPlayer];
+  if (props.gameOver) {
+    player = players[~props.currentPlayer+4];
+    return <p>{player == 'bleus' ? 'BRAVO' : 'GAME OVER'} ! Les {player} ont gagné !</p>
+  }
+  return <p>Trait aux {player}</p>
+}
+
+function Cell(props) {
+  const colors = {
+    1: 'blue',
+    2: 'red'
+  };
+  
+  // get class name
+  let className = null;
+  if (props.color) {
+    className = 'dot ' + colors[props.color];
+  }
+  
+  return (
+    <td className={className} onClick={props.onClick}></td>
+  )
+}
+
+class Board extends React.Component {
+  constructor(props) {
+    super(props);
+    const grid = generateGrid();
+    this.state = {
+      currentPlayer: 1,
+      height: 2,
+      gameOver: false,
+      grid,
+      width: grid[0].length,
+      easyAI: false
+    }
+  }
+  
+  resetBoard(height=null) {
+    height = height || this.state.height;
+    const grid = generateGrid(height);
+    this.setState({
+      currentPlayer: 1,
+      gameOver: false,
+      grid: grid,
+      height,
+      width: grid[0].length
+    });
+  }
+  
+  handleMove(row, col) {
+    let posPlayer1 = this.state.grid[row].indexOf(1);
+    let posPlayer2 = this.state.grid[row].indexOf(2);
+    if (posPlayer1 >= col || posPlayer2 <= col) {
+      // not valid move
+      return;
+    }
+    
+    //let grid = this.state.grid.map((row) => [...row]);
+    let grid = this.state.grid.slice();
+    // remove current player position
+    let position = grid[row].indexOf(this.state.currentPlayer);
+    grid[row][position] = 0;
+    // assign current player new position
+    grid[row][col] = this.state.currentPlayer;
+    
+    if (!isGameOver(grid)) {
+      grid = ia(grid, this.state.easyAI);
+    } else{
+      this.setState({
+        grid: grid,
+        gameOver: true,
+        currentPlayer: 2
+      })
+      return;
+    }
+    
+    this.setState({
+      grid: grid,
+      gameOver: isGameOver(grid)
+    });
+    return;
+  }
+  
+  renderTable() {
+    let rows = [];
+    let grid = this.state.grid.slice();
+    for (let i = 0; i < this.state.height; i++) {
+      let line = [];
+      for (let j = 0; j < this.state.width; j++) {
+        line.push(<Cell color={grid[i][j]} onClick={() => this.handleMove(i, j)} key={j}/>);
+      }
+      rows.push(<tr key={i}>{line}</tr>);
+    }
+    return rows;
+  }
+  
+  changeGridSize(event) {
+    const height = parseInt(event.target.value);
+    this.resetBoard(height);
+  }
+  
+  render() {
+    return (
+      <div>
+        <table>
+          <tbody>
+            {this.renderTable()}
+          </tbody>
+        </table>
+        <Info currentPlayer={this.state.currentPlayer} gameOver={this.state.gameOver}/>
+        <GridSizeChoices 
+          changeSize={this.changeGridSize.bind(this)}
+          changeAILevel={e => this.setState({easyAI: e.target.value === "0"})}
+        />
+        <button onClick={() => this.resetBoard()}>Nouvelle partie</button>
+        <TheRules/>
+      </div>
+    )
+  }
+}
+
+function isGameOver(grid) {
+  let positionA, positionB;
+  for (const line of grid) {
+    positionA = line.indexOf(1);
+    positionB = line.indexOf(2);
+    if (Math.abs(positionA - positionB) !== 1) {
+      return false;
+    }
+  }
+  return true;
+}
+
+ReactDOM.render(
+  <Board/>,
+  document.getElementById('root')
+);
+
+function calcXor(array) {
+    // TODO: avec reduce() ?
+    if (array.length < 2) return array[0];
+    let xor = array[0];
+    for (let i = 1; i < array.length; i++) {
+        xor = xor ^ array[i];
+    }
+    return xor;
+}
+
+function ia(grid, easyAI) {
+  let bestMove = {};
+  let minScore = 9999;
+  let score;
+  let distArray = getDistArray(grid);
+  for (let i = 0; i < Math.max(...distArray); i++) {
+    let row = 0;
+    for (const dist of distArray) {
+
+      if (!dist || i > dist){
+        row++;
+        continue;
+      }
+      distArray[row] = i;
+      score = calcXor(distArray);
+      if (!score) return playMove(grid, {row, i});
+      if (score < minScore) {
+        bestMove = {row, i};
+        if (easyAI && score < 3) {
+          return playMove(grid, bestMove);
+        }
+      }
+      distArray[row] = dist;
+      row++;
+    }
+  }
+  return playMove(grid, bestMove, easyAI);
+}
+
+function getDistArray(grid) {
+  let distArray = [];
+  let playerA, computer;
+  for (let line of grid) {
+    playerA = line.indexOf(1);
+    computer = line.indexOf(2);
+    distArray.push(Math.abs(playerA - computer) - 1);
+  }
+  return distArray;
+}
+
+function playMove(grid, bestMove, easyAI) {
+  let playerCol = grid[bestMove.row].indexOf(1);
+  let computerCol = grid[bestMove.row].indexOf(2);
+  let colDestination = playerCol + bestMove.i + 1;
+  if (easyAI && (colDestination - 1) !== playerCol) {
+    colDestination--;
+  }
+  grid[bestMove.row][computerCol] = 0;
+  grid[bestMove.row][colDestination] = 2;
+  return grid;
+}
+
+function getRndInteger(min, max) {
+  return Math.floor(Math.random() * (max - min) ) + min;
+}
+
+function generateGrid(height=2) {
+  let grid = [];
+  const width = Math.min(20, getRndInteger(height * 3, height * 5));
+  console.log(width);
+
+  for (let i = 0; i < height; i++) {
+    let row = Array(width).fill(0)
+    playerA = getRndInteger(0, width/2-1);
+    playerB = Math.floor(getRndInteger(width/2+1, width - 1));
+    console.log('playerB = '+playerB);
+    row[playerA] = 1;
+    row[playerB] = 2;
+    grid.push(row);
+  }
+  if (!calcXor(getDistArray(grid))) {
+    return generateGrid(height);
+  }
+  console.log(grid[0] + '//' + grid[1]);
+  return grid;
+}
